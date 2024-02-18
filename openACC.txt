@@ -1,0 +1,103 @@
+//OpenACC
+
+#pragma acc directive [clause[[,] clause]...]new-line
+{structure block}
+
+directive:
+    //Construct: is an OpenACC directive and, if applicable, the immediatly following statement, loop or structured block.
+        parallel: //a parallel construct launches a number of gangs (group of multiple workers) executing in parallel.
+                  //(workers: vector operations or SIMD Single Instruction Multiple Data operations).
+            #pragma acc parallel [clause[[,]clause]...]new-line
+            {structured block}
+            clauses:
+                //Compute Construct clauses
+                    if( condition )
+                    self [( condition )]
+                    default( none )
+                    default( present )
+                    device_type or dtype( [ * | device-type-list ] )
+                    async [( expression )]
+                    wait [( expression-list )]
+                    num_gangs( expression )
+                    num_workers( expression )
+                    vector_length( expression )
+                    reduction( operator: list )
+                    private( list )
+                    firstprivate( list );
+                //Data Clauses: data clauses on the parallel construct modify the structured reference counts for the associated data.
+                              //Modify the counts of the pointers refered to a particular data type (like arry or complexed structure)
+                              //The modifing of this counts is often necessary when we work in an Hign performance computing environment.
+                              //In contesti di programmazione parallela o distribuita, la gestione dei dati condivisi può richiedere la sincronizzazione e la modifica sicura di tali conteggi per evitare problemi come condizioni di gara (race conditions) o accessi concorrenti non sicuri alla memoria.
+                              //La "modifica dei conteggi dei riferimenti strutturati" potrebbe essere parte di strategie per garantire l'integrità dei dati durante operazioni concorrenti.
+                              //Inoltre, la menzione di "dati associati" suggerisce che questi conteggi di riferimenti potrebbero essere utilizzati per monitorare l'utilizzo di risorse o oggetti di dati specifici, il che potrebbe essere particolarmente rilevante in ambienti HPC in cui è essenziale ottimizzare l'efficienza delle risorse.
+                    copy( list )
+                    copyin( [readonly:] list )
+                    copyout( list )
+                    create( list )
+                    no_create( list )
+                    present( list )
+                    deviceptr( list )
+                    attach( list );
+
+        kernels: //surrounds loops to be executed on the device, typically as a sequence of kernel operations
+            #pragma acc parallel [clause[[,]clause]...]new-line
+            {structured block}
+            clauses:
+                //Compute Construct clauses
+                    if( condition )
+                    self [( condition )]
+                    default( none )
+                    default( present )
+                    device_type or dtype( [ * | device-type-list ] )
+                    async [( expression )]
+                    wait [( expression-list )]
+                    num_gangs( expression )
+                    num_workers( expression )
+                    vector_length( expression )
+                    reduction( operator: list )
+                    private( list )
+                    firstprivate( list );
+                //Data Clauses: data clauses on the parallel construct modify the structured reference counts for the associated data.
+                              //(like parallel one)
+                    copy( list )
+                    copyin( [readonly:] list )
+                    copyout( list )
+                    create( list )
+                    no_create( list )
+                    present( list )
+                    deviceptr( list )
+                    attach( list );
+                                           
+        serial: //surround loops or code to be executed serially on the device.
+            #pragma acc parallel [clause[[,]clause]...]new-line
+            {structured block}
+            clauses:
+                //Compute Construct clauses
+                    if( condition )
+                    self [( condition )]
+                    default( none )
+                    default( present )
+                    device_type or dtype( [ * | device-type-list ] )
+                    async [( expression )]
+                    wait [( expression-list )]
+                    num_gangs( expression )
+                    num_workers( expression )
+                    vector_length( expression )
+                    reduction( operator: list )
+                    private( list )
+                    firstprivate( list );
+                //Data Clauses: data clauses on the parallel construct modify the structured reference counts for the associated data.
+                              //(like parallel and kernel ones)
+                    copy( list )
+                    copyin( [readonly:] list )
+                    copyout( list )
+                    create( list )
+                    no_create( list )
+                    present( list )
+                    deviceptr( list )
+                    attach( list );
+
+clauses: //we have two type of clauses
+    //Compute Construct Clauses
+        if(condition)
+            When the condition is nonzero or TRUE,

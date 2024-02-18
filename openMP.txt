@@ -1,0 +1,296 @@
+Introduction to OpenMP
+
+Unit1--------------------
+Concurrency vs. Parallelism:
+    Concurrency: a condition of a sistem in which multiple tasks are logically active at one time.
+    Parallelism: a condition of a system in which multiple tasks are actually active at one time.
+
+Constructs to compiler:
+    #pragma omp ...
+
+For the exercises in local device:
+    gcc -fopenmp -o...  //compile with the implement of the OpenMP directives
+    export OMP_NUM_THREADS=... //choise the number of threads in which the parallelism are composed
+    ./... //to execute the program
+
+    In the first exercise 'hello_world.c' we can see how the parallelism works.
+    We notice that the answers contain the output in a different order for each time we run the programme.
+    This is due to the structure of the layers of the hierarchical organization of the shared memory computers.
+
+Shared memory computers:
+    Any computer composed of multiple processing elements that share an address space. 
+    Two Classes:
+        Symmetric multiprocessor (SMP): a shared adress space with "equal-time" access for each processor, and the OS threats every processor the same way.
+        Non Uniform address space multiprocessor (NUMA): different memery regions have different access costs ... think of memory segmented into "Near" and "Far" memory.
+
+        Proc1   Proc2   Proc3   ...   ProcN
+        |_______|_______|_____________|
+        |                             |
+        |    Shared Address Space     |
+        |_____________________________|
+
+    NUMA some addresses are prefer timing
+    SMP every process are same importance
+    
+    Cray-2
+    Intel Core i7-970 processor
+
+    'tablet pag. 13'-> How a process multi-threading works (Synchronization)
+
+OpenMP Overview:
+    How do threads interact?
+-OpenMP is a multi-threading shared address model;
+    Threads communicate by sharing variables.
+-Unintended sharing of dara causes 'Race conditions': 
+    Race condition: when the program's outcome changes as the threads are scheduled differently!
+    To control Race conditions-> synchronization to protect data conflicts.
+                                                |
+                                Synchronization is expensive so:
+                                change how data is accessed to minimize the need for synchronization.
+
+Unit2--------------------
+How create threads?
+Fork-join model
+    Master thread->fork more threads that work toghether in prallel-> when they finish their work rejoin all in one thread again
+    'tablet pag. 16'
+
+        double A[1000];
+        omp_set_num_threads(4); //Runtime function to request a certain number of threads
+        #pragma omp parallel
+        {
+            int ID=omp_get_thread_num() //Runtime function returning a thread ID
+            pooh(ID,A):
+        }//Each thread executes a copy of the code within the structured block
+        //Each thread calls pooh(ID,A) for ID=0 to 3
+        printf("all done\n");
+
+     Or you can use a clause:
+
+        double A[1000];
+
+        #pragma omp parallel num_threads(4)
+        {
+            int ID=omp_get_thread_num();
+            pooh(ID,A);
+        }
+        printf("all done\n");
+
+    What happens is:
+        Each thread executes the same code redundantly.
+                |
+            double A[1000];
+                |
+            omp_set_num_threads(4)
+                |______________________________________
+                |             |         |              |
+                pooh(0,A)  pooh(1,A)  pooh(2,A)  pooh(3,A)  //A single copy of A is shared between all threads!
+                |_____________|_________|______________|
+                |
+            printf("all done\n"); //Threads wait here for all threads to finish before proceeding (i.e. a barrier)
+
+    What compiler does:
+        The OpenMP compiler generates code logically analogous to the following code, starting from:
+
+            #pragma omp parallel num_threads(4)        ->   void thunk()
+            {                                               {
+                foobar();                                       foobar();
+            }                                               }
+                                                            
+                                                            pthread_t tid[4];
+                                                            for(int i=1; i<4; i++)
+                                                                pthread_create(&tid[i],0,thunk,0);
+                                                            thunk();
+
+                                                            for(int i=1; i<4; i++)
+                                                                pthread_join(tid[i]);
+
+        All know OpenMP implementations use a thread pool so full cost of threads creation and destruction is not incurred for reach parallel region
+        Only three threads are created because the last parallel section will be invoked from the parent thred
+
+        PAD
+        NIntPI_omp.c
+
+        Il termine "false sharing" si riferisce a una situazione in cui più thread o processori condividono la stessa area di memoria, ma ognuno di essi modifica dati separati all'interno di quella area. 
+        Questo può portare a un degrado delle prestazioni a causa della competizione per la coerenza della cache, anche se i dati stessi non sono realmente condivisi.
+        Nel contesto del parallelismo e della programmazione concorrente, i moderni sistemi hardware utilizzano spesso una gerarchia di cache per migliorare le prestazioni. 
+        Quando più thread accedono a dati condivisi, la coerenza della cache diventa cruciale. 
+        Il problema del false sharing si presenta quando due o più thread modificano dati che risiedono nello stesso blocco di cache, anche se i dati specifici che stanno modificando sono diversi.
+
+        La "coerenza della cache" si riferisce alla consistenza dei dati tra le diverse memorie cache in un sistema multiprocessore. 
+        In un ambiente multiprocessore, ogni processore ha la sua cache locale che memorizza temporaneamente i dati frequentemente utilizzati. 
+        La coerenza della cache è fondamentale per garantire che tutti i processori visualizzino una visione coerente e aggiornata della memoria condivisa.
+
+        Quando più processori accedono e modificano gli stessi dati nella memoria principale, è possibile che i dati nelle cache dei vari processori diventino non coerenti. 
+        Ciò può portare a risultati imprevedibili e comportamenti indesiderati del programma. 
+        La coerenza della cache gestisce questo problema attraverso vari meccanismi:
+
+        1. Protocolli di Coerenza della Cache:
+            I sistemi multiprocessore implementano protocolli di coerenza della cache per definire le regole e le politiche secondo cui le cache devono essere aggiornate e coordinate. 
+            Alcuni protocolli comuni includono MESI (Modificato, Esclusivo, Condiviso, Invalido) e MOESI (Modificato, Proprio, Esclusivo, Condiviso, Invalido).
+
+        2. Operazioni di Controllo:
+            Le operazioni di controllo della coerenza della cache, come la lettura e la scrittura, sono gestite in modo da garantire che tutti i processori visualizzino i dati aggiornati. 
+            Ciò può comportare la trasmissione di segnali di invalidazione o aggiornamento tra le cache.
+
+        3. Scrittura Retroattiva e Scrittura Diretta:
+            Le politiche di scrittura retroattiva e scrittura diretta determinano quando una cache scrive i dati modificati nella memoria principale. 
+            Con la scrittura retroattiva, i dati vengono scritti solo quando una linea di cache viene sostituita, mentre con la scrittura diretta i dati vengono scritti immediatamente nella memoria principale.
+
+        4. Allineamento di Memoria:
+            L'allineamento della memoria è utilizzato per garantire che i dati inizino in posizioni di memoria che sono multipli interi del numero di byte della cache. 
+            Questo può ridurre il rischio di false condivisioni e migliorare la coerenza della cache.
+
+        5. Barriere di Memoria e Sincronizzazione:
+            L'uso di barriere di memoria e istruzioni di sincronizzazione può essere impiegato per coordinare l'accesso e la sincronizzazione tra i processori, garantendo una visione coerente della memoria.
+            La gestione della coerenza della cache è essenziale per garantire che un programma parallelo in un ambiente multiprocessore produca risultati corretti e prevedibili. 
+            Gli sviluppatori devono essere consapevoli di questi meccanismi e considerarli durante la progettazione di applicazioni parallele.
+
+Synchronization:
+    Bringing one or more threads to a well defined and know point in ther execution.
+        The two most common forms of synchronization are:
+            -Barrier: each thread wait at the barrier until all threads arrive;
+            -Mutual exclusion: define a block of code that only one thread at a time can execute.
+        .High level synchronization:
+            -critical;
+            -atomic;
+            -barrier;
+            -ordered;
+        .Low level synchronization:
+            -flush;
+            -locks (both simple and nested);
+
+    sync.c
+
+    Synchronization is used to impose order constraits and to protect acess to shared data.
+
+            Barrier: each thread waits until all threads arrive
+                #pragma omp parallel
+                {
+                    int id=omp_get_thread_num();
+                    A[id]=big_calc1(id);
+
+                #pragma omp barrier
+
+                    B[id]=big_calc2(id,A);
+                }
+
+            Mutual exclusion: only one thread at a time can enter a critical region.
+                float res;
+                #pragma omp parallelism
+                {
+                    float B; int i, id, nthrds;
+                    id=omp_get_thread_num();
+                    nthrds=omp_get_num_threads();
+                    for(i=id;i<niters;i+=nthrds){
+                        B=big_job(i);
+
+                #pragma omp critical //Threads wait their turn- only one at a time calls consume()
+                    res+=cosume(B);
+                    }
+                }
+
+            Atomic(basic form): provides mutual exclusion but only applies to the update of a memory location.
+                                (l'aggiornamento di X nell'esempio seguente)
+                #pragma omp parallel
+                {
+                    double tmp, B;
+                    B=DOIT();
+                    tmp=big_ugly(B);
+                
+                #pragma omp atomic
+                    X+=tmp
+                }
+
+Parallel Loops
+    Un costrutto parallelo da solo crea un SPMD (Single Program Multiple Data)
+    -> ciascun thread esegue ridondamente lo stesso codice.
+    Come è possibile splittare i pathways attraverso il codice tra threads dentro un team?
+        ->
+    Worksharing
+        -Loop construct;
+        -Sections/section constructs;
+        -Task construct.
+
+        Loop construct
+            The loop worksharing construct splits up loop iterations among the threads in a team:
+
+                #pragma omp parallel
+                {
+                #pragma omp for //Loop construct name in C/C++: for
+                    for(i=0;i<N;i++)
+                        NEAT_STUFF(i); //The variable 'i' is made "private" to each thread by default.
+                                       //You could do this explicitly with a 'private(i)' clause
+                }
+
+            Con il construtto for è possibile semplificare di molto il lessico del ciclo interno al blocco di parallelismo.
+            Per esempio:
+
+                #pragma omp parallel //OpenMP parallel region
+                {
+                    int ID, i, Ntrhrds, istart, iend;
+                    ID=omp_get_thread_num();
+                    Nthrds=omp_get_num_threads();
+                    istart=ID*N/Nthrds;
+                    iend=(ID+1)*N/Nthrds;
+                    if(ID==Nthrds-1)
+                        iend=N;
+                    for(i=istart;i<iend;i++)
+                        a[i]=a[i]+b[i];
+                }
+
+            vs.
+
+                #pragma omp parallel //OpenMP parallel region and a worksharing for construct
+                #pragma omp for
+                    for(i=0;i<N;i++)
+                        a[i]=a[i]+b[i];
+
+            The schedule clause (clausole organizzative o di pianificazione) //chunck=pezzo
+                Le clausole di pianificazione/organizzative di schedule regolano/colpiscono come i loop sono mappati nei threads:
+                -schedule(static[,chunck])
+                    Distribuisci blocchi di iterazioni di dimensione 'chunk' a ciascun thread;
+                -schedule(dynamic[,chunk])
+                    Ogni threads preleva 'chunck' di iterazioni da una coda finchè tutte le iterazioni non sono state gestite.
+                -schedule(guided[,chunck])
+                    I threads catturano blocchi di iterazioni dinamicamente. 
+                    La dimensione del blocco inizia grande e si riduce fino alla dimensione 'chunck' man mano che il calcolo procede.
+                -schedule(runtime)
+                    Schedule and chunck size sono prese da OMP_SCHEDULE variabile d'ambiente (o la libreria runtime)
+                -schedule(auto)
+                    La pianificazione è lasciata al runtime da scegliere (non deve essere una delle precedenti).
+
+                Schedule Clause  |  When To Use 
+                -----------------|------------------------------------------------------------------------
+                static           | Pre-determined and predictable by the programmer                       //Least work at runtime: scheduling done at compile-time
+                -----------------|------------------------------------------------------------------------
+                dynamic          | Unpredictable, highly variablework per iterations                      //Most work at runtime: complex scheduling logic used at run-time
+                -----------------|------------------------------------------------------------------------
+                guided           | Special case of dynamic to reduce scheduling overhead
+                -----------------|------------------------------------------------------------------------
+                auto             | When the runtime can "learn" from previous executions of the same loop
+
+        Combined parallel/worksharing construct
+            OpenMP shorcut: Put the "parallel" and the worksharing directive on the same line
+                
+                double res[MAX]; int i;        double res[MAX]; int i;
+                #pragma omp parallel{          #pragma omp parallel for
+                #pragma omp for                    for(i=0;i<MAX;i++){
+                for(i=0;i<MAX;i++)                     res[i]=huge();
+                    res[i]=huge();                 }
+                }
+
+        Working with Loops
+            Basic approach: 
+                -Find compute intensive loops;
+                -Make the loop iterations independent.
+                 So they can safely execute in any order without loop-carried dependencies;
+                -Place the appropriate OpenMP directive and test.        
+            
+
+                    
+
+
+
+
+
+

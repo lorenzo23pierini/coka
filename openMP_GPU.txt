@@ -1,0 +1,193 @@
+OpenMP API (https://www.youtube.com/watch?v=uVcvecgdW7g)
+
+Host->Device (GPU)
+    Transfer control and data from the host to the device
+        #pragma omp target [clause[[,] clause],...]
+            structure-block
+    
+    Clauses
+        device(scalar-integer-expression)
+        map([{alloc |to |from |tofrom}:] list) (figura sul tablet pag. 22)
+        if(scalar-expression)
+
+    void saxpy(){
+        float a, x[SZ], y[SZ];
+
+        double t=0.0;
+        double tb, te;
+        tb=omp_get_wtime();
+
+        #pragma omp target        #pragma omp target map(tofrom:y[0:SZ])
+            Siamo nel Device           Porto nel Device e riporto nell'host y[SZ] da 0 a SZ-1
+
+            In ogni caso il compilatore riconosce la varibile richiesta nel pragma del target quindi copia tutto quello che è necessario.
+            x viene portata nel device e riportata nell'host. Non sarebbe necessario che la x torna perchè non subisce variazioni.
+            La prendiamo se non specifichiamo la map ma allo stesso tempo questa viene reinviata dal device all'host. Non serve visto che non subisce modifiche.
+            In seguito vedremo come non far tornare la x.
+
+            Infatti il codice nel blocco di parallelismo è:
+
+            for(int i=0; i<SZ;i++){
+                y[i]=a*x[i]+y[i];
+            }
+        Tutto torna nell'host.
+
+        te=omp_get_wtime();
+        t=te-tb;
+        printf("Time of kernel: %lf\n", t);
+    }
+
+Comandi/flag per il compilatore: Compiler options
+    clang/LLVN: clang -fopenmp-targets=<target triple>
+    GNU: gcc -fopenmp
+    AMD ROCm: clang -fopenmp -offload-arch=gfx908
+    NVIDIA: nvcc -mp=gpu -gpu=cc80
+    Intel: icx -fiopenmp -fopenmp-targets=spir64
+    IBM XL: xlc -qsmp -qoffload -qtgtarch=sm_70
+
+Map clauses
+NB: Se le dimensioni dell'array non sono specificate nel programma, o in particolare nella funzione che si sta definendo, allora il programmatore deve fornire al compilatore le informazioni legate al puntatore associato.
+Ovvero:
+    void saxpy(float a, float* x, float* y, int sz){
+        double t=0.0;
+        double tb, te;
+        tb=omp_get_wtime();
+    
+    #pragma omp target map(to:x[0:sz]) map(tofrom:y[0:sz])
+        for(int i=0; i<sz; i++)
+            y[i]=a*x[i]+y[i];
+        
+        te=omp_get_wtime();
+        t=te-tb;
+        printf("Time of kernel: %lf\n", t);
+    }
+
+Quindi in questi casi è obbligatore aggiunge le clausole di map!
+
+Multilevel Parallelism
+Se si lascia il ciclo in esecuzione seriale standard, non si ha l'accellerazione per la quale stiamo implementando il codice seguente.
+Infatti non si guadagna tempo, ovvero non si sfruttano le potenzialità di accellerazione delle GPU, poichè si sta lavorando in mono threading!
+Quindi è maggiore il tempo impiegato per l'offloading dei dati dall'host al device al quale va aggiunto il tempo di esecuzione in serie del ciclo for.
+Ovviamente, così facendo, sarebbe più conveniente lavorare in locale sull'host.
+
+Creating Parallelism on the Target Device
+target construct: transfers the control flow to the target device
+    transfer of control is sequential and synchronous
+    this is intentional
+
+other constructs for the parallelism... (they are the same for CPU and GPU: openMP.txt)
+    void saxpy(float a, float* x, float* y, int sz){
+
+    #pragma omp target map(to:x[0:sz])\map(tofrom:y[0:sz])
+    #pragma omp parallel for simd //Create a team of threads to execute the loop in parallel using SIMD instructions
+        for(int i=0; i<sz; i++)
+            y[i]=a*x[i]+y[i];
+    }
+
+NB: GPUs are multi-level devices-> SIMD, threads, threads blocks
+    E' quindi necessario modificare manualmente il codice:
+
+    -Tile the loop into an outer loop and an inner loop;
+
+        void saxpy(float a, float* x, float* y, int sz){
+
+            int bs=n/omp_get_num_teams(); //n assumed to be multiple of #teams
+
+            for(int i=0; i<sz; i+=bs){
+
+                for(int ii=i; ii<i+bs;ii++)
+                    y[ii]=a*x[ii]+y[ii];
+            }
+        }
+    
+    -Assign the outer loop to "teams";
+
+        void saxpy(float a, float* x, float* y, int sz){
+        #pragma omp target teams map(to:x[0:sz]) map(tofrom:y[0:sz]) num_teams(nteams)
+        {
+            int bs=n/omp_get_num_teams(); //n assumed to be multiple of #teams
+            #pragma omp distribute //Assegna ogni ciclo a un team
+            for(int i=0; i<sz; i+=bs){
+                for(int ii=i; ii<i+bs;ii++)
+
+                    y[ii]=a*x[ii]+y[ii];
+            }
+        }
+        }
+    
+    -Assign the inner loo to the "threads";
+
+        void saxpy(float a, float* x, float* y, int sz){
+        #pragma omp target teams map(to:x[0:sz]) map(tofrom:y[0:sz]) num_teams(nteams)
+        {
+            int bs=n/omp_get_num_teams(); //n assumed to be multiple of #teams
+            #pragma omp distribute //Assegna ogni ciclo a un team
+            for(int i=0; i<sz; i+=bs){
+                for(int ii=i; ii<i+bs;ii++)
+                    #pragma omp parallel for simd firstprivate(i, bs) // openMP.txt
+                    y[ii]=a*x[ii]+y[ii];
+            }
+        }
+        }
+
+    For convenience, OpenMP defines composite constructs to implement the required code trasformations:
+        
+        void saxpy(float a, float* x, float* y, int sz){
+        #pragma omp target teams distribute parallel for simd num_teams(nteams) map(to:x[0:sz]) map(tofrom:y[0:sz]) num_teams(nteams)
+        {
+            for(int i=0; i<sz; i+=bs){
+                for(int ii=i; ii<i+bs;ii++)
+                    y[ii]=a*x[ii]+y[ii];
+            }
+        }
+        }
+    
+Quindi, la sintassi per il parallelismo a multilivello:
+Support multi-level parellel devices
+    #pragma omp teams [clause[[,] clause], ...]
+    structured-block
+
+Clauses
+    num_teams(integer-expression)
+    thread_limit(integer-expression)
+    default(shared | fisrtprivate | private none)
+    private(list)
+    firstprivate(list)
+    shared(list)
+    reduction(operator:list)
+
+Optimizing Data transfers
+Optimizing data transfers is key to performance.
+Connections between host and accelerator are typically lower-bandwidth, higher-latency interconnects.
+Unnecessary data transfers must be avoided by:
+    -only trasferring what is actually needed for the computation;
+    -making the lifetime of the data on the target devices as long as possible.
+(
+    Bandwith host memory: 1000 GB/sec
+    Bandwith accelerator memory: TB/sec
+    PCIe Gen 4 bandwidth (16x): 10 GB/sec
+)
+
+Ruolo del Presence Check
+Se le clausole di map non sono aggiunte ai constructs del target, presence check determina se il dato è già disponibile nel device data environment:
+    -OpenMP mantiene una tabbella di mapping che registra cosa i puntatori di memoria hanno mappato;
+    -Questa tabella mantiene anche le traslazioni tra host memory e device memory;
+    -Per constructs senza clausole di map per un certo elenco di dati, viene determinato dopo se il dato è stato mappato o se non lo è stato, 
+     semplicemente aggiungendo un map(tofrom:...) per questo elenco di dati. (Lo fa in automatico e quindi risultano nella tabella)
+
+Per ridurre il tempo speso per il trasferimento dei dati:
+    -Usare le clausole di ma per rinforzare la direzione del trasferimento dei dati;
+    -Soprattutto usare target data, target enter data, target exit dasta constructs per portsre l'ambiente dei dati nel target device.
+
+        void example(){
+            float tmp[N], data_in[N], data_out[N];
+
+            #pragma omp target data map(alloc:tmp[:N]) map(to:a[:N],b[:N]) map(tofrom:c[:N])
+        }
+?
+Sostanzialmente quello che fa target data è passare sul device, prima del blocco di esecuzioni i dati e le variabili.
+Così facendo si allocano già le variabili tenendole più tempo possibile nel device ospitante. 
+Già ci sono in memoria nel device, quindi quando servono le prendi per il parallelismo.
+
+
+
